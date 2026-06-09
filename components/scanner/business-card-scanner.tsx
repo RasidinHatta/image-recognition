@@ -107,6 +107,10 @@ function validatePhone(value: string) {
   });
 }
 
+function getFirstPhoneNumber(value: string) {
+  return value.split(/[,\n;]+/).find((entry) => entry.trim())?.trim() ?? "";
+}
+
 export function BusinessCardScanner() {
   const { toast } = useToast();
   const inputRef = React.useRef<HTMLInputElement | null>(null);
@@ -180,7 +184,11 @@ export function BusinessCardScanner() {
 
       setProgress(100);
       setRawText(payload.rawText);
-      setContact({ ...emptyContact, ...payload.contact });
+      setContact({
+        ...emptyContact,
+        ...payload.contact,
+        phoneNumber: getFirstPhoneNumber(payload.contact?.phoneNumber ?? ""),
+      });
       setConfidence(payload.confidence);
 
       toast({
@@ -480,11 +488,10 @@ export function BusinessCardScanner() {
                   onChange={(value) => updateContact("phoneNumber", value)}
                   error={
                     !phoneValid
-                      ? "Enter valid phone numbers separated by commas or new lines."
+                      ? "Enter a valid phone number."
                       : ""
                   }
                   icon={<Phone className="h-4 w-4" />}
-                  multiline
                 />
                 <Field
                   id="email"

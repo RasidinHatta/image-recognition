@@ -107,7 +107,8 @@ Return only valid JSON with this exact TypeScript shape:
 Rules:
 - Transcribe all visible text into rawText.
 - Extract the most likely person name, company, title, phone, email, website, and address.
-- If there are multiple direct phone/mobile/Tel numbers, join them with commas and preserve labels/country/area codes, for example "(MY):012-788 3383, (SG):(65) 9088 4767, (65)-63964767, (607)-3889903".
+- If there are multiple direct phone/mobile/Tel numbers, put only the first direct phone number in phoneNumber and preserve its label/country/area code, for example "(MY):012-788 3383".
+- Put additional direct phone/mobile/Tel numbers in notes.
 - Do not put fax numbers in phoneNumber; put fax numbers in notes.
 - If there are multiple office addresses, include them in address with line breaks.
 - Use notes for extra details like registration numbers, alternate names, QR presence, or uncertain fields.
