@@ -92,11 +92,19 @@ function validateEmail(value: string) {
 }
 
 function validatePhone(value: string) {
-  if (!value.trim()) {
+  const entries = value
+    .split(/[,\n;]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  if (entries.length === 0) {
     return true;
   }
 
-  return /^[+()\d\s.,-]{7,}$/.test(value);
+  return entries.every((entry) => {
+    const digits = entry.replace(/\D/g, "");
+    return digits.length >= 7 && /^[A-Za-z()+\d\s.:-]+$/.test(entry);
+  });
 }
 
 export function BusinessCardScanner() {
@@ -470,8 +478,13 @@ export function BusinessCardScanner() {
                   label="Phone number"
                   value={contact.phoneNumber}
                   onChange={(value) => updateContact("phoneNumber", value)}
-                  error={!phoneValid ? "Enter a valid phone number." : ""}
+                  error={
+                    !phoneValid
+                      ? "Enter valid phone numbers separated by commas or new lines."
+                      : ""
+                  }
                   icon={<Phone className="h-4 w-4" />}
+                  multiline
                 />
                 <Field
                   id="email"
@@ -572,6 +585,7 @@ function Field({
   onChange,
   error,
   icon,
+  multiline = false,
 }: {
   id: string;
   label: string;
@@ -579,6 +593,7 @@ function Field({
   onChange: (value: string) => void;
   error?: string;
   icon?: React.ReactNode;
+  multiline?: boolean;
 }) {
   return (
     <div className="space-y-2">
@@ -589,13 +604,27 @@ function Field({
             {icon}
           </div>
         ) : null}
-        <Input
-          id={id}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          className={cn(icon && "pl-9", error && "border-red-300 ring-red-100")}
-          placeholder={label}
-        />
+        {multiline ? (
+          <Textarea
+            id={id}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            className={cn(
+              "min-h-20 resize-y",
+              icon && "pl-9",
+              error && "border-red-300 ring-red-100",
+            )}
+            placeholder={label}
+          />
+        ) : (
+          <Input
+            id={id}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            className={cn(icon && "pl-9", error && "border-red-300 ring-red-100")}
+            placeholder={label}
+          />
+        )}
       </div>
       {error ? <p className="text-xs text-red-600">{error}</p> : null}
     </div>
