@@ -8,10 +8,12 @@ import { cn } from "@/lib/utils";
 function Dialog({
   open,
   onOpenChange,
+  className,
   children,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  className?: string;
   children: React.ReactNode;
 }) {
   if (!open) {
@@ -25,7 +27,12 @@ function Dialog({
         onClick={() => onOpenChange(false)}
         aria-hidden="true"
       />
-      <div className="relative z-10 w-full max-w-md rounded-lg border border-border bg-card p-6 text-card-foreground shadow-xl">
+      <div
+        className={cn(
+          "relative z-10 w-full max-w-md rounded-lg border border-border bg-card p-6 text-card-foreground shadow-xl",
+          className,
+        )}
+      >
         {children}
         <Button
           type="button"

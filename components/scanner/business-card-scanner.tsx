@@ -6,6 +6,7 @@ import Link from "next/link";
 import {
   AlertCircle,
   BriefcaseBusiness,
+  Camera,
   Check,
   ClipboardCheck,
   FileImage,
@@ -116,6 +117,11 @@ function getFirstPhoneNumber(value: string) {
 export function BusinessCardScanner() {
   const { toast } = useToast();
   const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = React.useRef<HTMLInputElement | null>(null);
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const streamRef = React.useRef<MediaStream | null>(null);
+  const autoCaptureRef = React.useRef(false);
   const [isDragging, setIsDragging] = React.useState(false);
   const [isProcessing, setIsProcessing] = React.useState(false);
   const [progress, setProgress] = React.useState(0);
@@ -125,6 +131,9 @@ export function BusinessCardScanner() {
   const [confidence, setConfidence] = React.useState(0);
   const [contact, setContact] = React.useState<ContactDetails>(emptyContact);
   const [saveDialogOpen, setSaveDialogOpen] = React.useState(false);
+  const [scannerOpen, setScannerOpen] = React.useState(false);
+  const [scannerStatus, setScannerStatus] = React.useState("Point the camera at the card.");
+  const [scannerReady, setScannerReady] = React.useState(false);
 
   React.useEffect(() => {
     if (!isProcessing) {
@@ -137,6 +146,167 @@ export function BusinessCardScanner() {
 
     return () => window.clearInterval(interval);
   }, [isProcessing]);
+
+  const stopCamera = React.useCallback(() => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    autoCaptureRef.current = false;
+    setScannerReady(false);
+  }, []);
+
+  const captureFromScanner = React.useCallback(async () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    if (!video || !canvas || video.videoWidth === 0 || video.videoHeight === 0) {
+      return;
+    }
+
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return;
+    }
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, "image/jpeg", 0.92);
+    });
+
+    if (!blob) {
+      toast({
+        title: "Capture failed",
+        description: "The camera frame could not be converted to an image.",
+        variant: "error",
+      });
+      return;
+    }
+
+    stopCamera();
+    setScannerOpen(false);
+    await runRecognition(
+      new File([blob], `business-card-${Date.now()}.jpg`, {
+        type: "image/jpeg",
+      }),
+    );
+  }, [stopCamera, toast]);
+
+  React.useEffect(() => {
+    if (!scannerOpen) {
+      stopCamera();
+      return;
+    }
+
+    let cancelled = false;
+    let animationFrame = 0;
+    let stableSince = 0;
+
+    const scoreFrame = () => {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+
+      if (!video || !canvas || video.videoWidth === 0 || video.videoHeight === 0) {
+        animationFrame = window.requestAnimationFrame(scoreFrame);
+        return;
+      }
+
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+
+      if (!context) {
+        return;
+      }
+
+      const sampleWidth = 96;
+      const sampleHeight = 60;
+      canvas.width = sampleWidth;
+      canvas.height = sampleHeight;
+      context.drawImage(video, 0, 0, sampleWidth, sampleHeight);
+
+      const { data } = context.getImageData(0, 0, sampleWidth, sampleHeight);
+      let edgeScore = 0;
+      let contrastScore = 0;
+
+      for (let y = 1; y < sampleHeight; y += 2) {
+        for (let x = 1; x < sampleWidth; x += 2) {
+          const index = (y * sampleWidth + x) * 4;
+          const leftIndex = (y * sampleWidth + x - 1) * 4;
+          const topIndex = ((y - 1) * sampleWidth + x) * 4;
+          const light = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
+          const left = data[leftIndex] * 0.299 + data[leftIndex + 1] * 0.587 + data[leftIndex + 2] * 0.114;
+          const top = data[topIndex] * 0.299 + data[topIndex + 1] * 0.587 + data[topIndex + 2] * 0.114;
+          const delta = Math.abs(light - left) + Math.abs(light - top);
+          edgeScore += delta > 48 ? 1 : 0;
+          contrastScore += Math.abs(light - 128);
+        }
+      }
+
+      const hasCardLikeDetail = edgeScore > 80 && contrastScore > 9000;
+
+      if (hasCardLikeDetail) {
+        stableSince = stableSince || performance.now();
+        setScannerStatus("Card detected. Hold steady.");
+
+        if (performance.now() - stableSince > 950 && !autoCaptureRef.current) {
+          autoCaptureRef.current = true;
+          setScannerStatus("Capturing card...");
+          void captureFromScanner();
+          return;
+        }
+      } else {
+        stableSince = 0;
+        setScannerStatus("Place the card inside the frame.");
+      }
+
+      animationFrame = window.requestAnimationFrame(scoreFrame);
+    };
+
+    const startCamera = async () => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setScannerStatus("Camera access is not available in this browser.");
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+
+        setScannerReady(true);
+        setScannerStatus("Place the card inside the frame.");
+        scoreFrame();
+      } catch {
+        setScannerStatus("Camera permission was blocked or no camera was found.");
+      }
+    };
+
+    void startCamera();
+
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(animationFrame);
+      stopCamera();
+    };
+  }, [captureFromScanner, scannerOpen, stopCamera]);
 
   const updateContact = (field: keyof ContactDetails, value: string) => {
     setContact((current) => ({ ...current, [field]: value }));
@@ -241,6 +411,10 @@ export function BusinessCardScanner() {
       inputRef.current.value = "";
     }
 
+    if (cameraInputRef.current) {
+      cameraInputRef.current.value = "";
+    }
+
     toast({
       title: "Workspace cleared",
       description: "Upload another business card when ready.",
@@ -325,7 +499,7 @@ export function BusinessCardScanner() {
                   <div>
                     <CardTitle>Upload Card</CardTitle>
                     <CardDescription>
-                      Drop a business card image or choose one from your device.
+                      Drop a business card image, choose a file, or capture one with the camera.
                     </CardDescription>
                   </div>
                   {confidence > 0 ? (
@@ -367,6 +541,14 @@ export function BusinessCardScanner() {
                     className="hidden"
                     onChange={(event) => handleFiles(event.target.files)}
                   />
+                  <input
+                    ref={cameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={(event) => handleFiles(event.target.files)}
+                  />
                   <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-md bg-white text-primary shadow-sm ring-1 ring-slate-200 transition-transform group-hover:-translate-y-0.5">
                     <Upload className="h-5 w-5" />
                   </div>
@@ -376,6 +558,27 @@ export function BusinessCardScanner() {
                   <p className="mt-1 text-sm text-muted-foreground">
                     or click to browse image files
                   </p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => cameraInputRef.current?.click()}
+                    disabled={isProcessing}
+                  >
+                    <Camera className="h-4 w-4" />
+                    Take Photo
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setScannerOpen(true)}
+                    disabled={isProcessing}
+                  >
+                    <ScanLine className="h-4 w-4" />
+                    Auto Scan Card
+                  </Button>
                 </div>
 
                 {isProcessing ? (
@@ -591,6 +794,57 @@ export function BusinessCardScanner() {
         <DialogFooter>
           <Button type="button" onClick={() => setSaveDialogOpen(false)}>
             Done
+          </Button>
+        </DialogFooter>
+      </Dialog>
+
+      <Dialog
+        open={scannerOpen}
+        onOpenChange={setScannerOpen}
+        className="max-w-3xl p-4 sm:p-5"
+      >
+        <DialogHeader>
+          <DialogTitle>Auto Scan Card</DialogTitle>
+          <DialogDescription>
+            Align the business card inside the frame. Capture starts automatically when the card is steady.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-slate-950">
+          <div className="relative aspect-[16/10] w-full">
+            <video
+              ref={videoRef}
+              className="h-full w-full object-cover"
+              playsInline
+              muted
+              autoPlay
+            />
+            <div className="pointer-events-none absolute inset-0 bg-slate-950/20" />
+            <div className="pointer-events-none absolute left-1/2 top-1/2 aspect-[1.58/1] w-[82%] -translate-x-1/2 -translate-y-1/2 rounded-lg border-2 border-white shadow-[0_0_0_999px_rgba(2,6,23,0.42)]" />
+            <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-3 rounded-md bg-slate-950/75 px-3 py-2 text-sm text-white backdrop-blur">
+              <span className="flex min-w-0 items-center gap-2">
+                {scannerReady ? (
+                  <ScanLine className="h-4 w-4 shrink-0" />
+                ) : (
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                )}
+                <span className="truncate">{scannerStatus}</span>
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void captureFromScanner()}
+                disabled={!scannerReady || autoCaptureRef.current}
+              >
+                <Camera className="h-4 w-4" />
+                Capture
+              </Button>
+            </div>
+          </div>
+        </div>
+        <canvas ref={canvasRef} className="hidden" />
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => setScannerOpen(false)}>
+            Cancel
           </Button>
         </DialogFooter>
       </Dialog>
