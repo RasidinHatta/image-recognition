@@ -1,0 +1,129 @@
+<mxfile host="app.diagrams.net" modified="2026-06-11T00:00:00.000Z" agent="Codex" version="26.0.0">
+  <diagram id="image-recognition-llm-flow" name="Image Recognition LLM Flow">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="front" value="Frontend: Browser / React Client" style="swimlane;whiteSpace=wrap;html=1;startSize=34;fillColor=#EAF4FF;strokeColor=#2F6FED;fontStyle=1;fontColor=#123B75;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="720" height="900" as="geometry" />
+        </mxCell>
+        <mxCell id="back" value="Backend: Next.js API + External LLM" style="swimlane;whiteSpace=wrap;html=1;startSize=34;fillColor=#FFF4E6;strokeColor=#D97706;fontStyle=1;fontColor=#7C3E00;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="840" y="60" width="720" height="900" as="geometry" />
+        </mxCell>
+        <mxCell id="s1" value="1. User uploads business card image&#xa;JPG / PNG / WEBP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2F6FED;fontStyle=1;" vertex="1" parent="front">
+          <mxGeometry x="60" y="80" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" value="2. Frontend validates file type&#xa;Unsupported files show toast error" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2F6FED;" vertex="1" parent="front">
+          <mxGeometry x="60" y="200" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="3. Frontend prepares UI state&#xa;- Shows preview with object URL&#xa;- Clears old contact/raw text&#xa;- Starts progress indicator" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2F6FED;" vertex="1" parent="front">
+          <mxGeometry x="60" y="320" width="280" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="s4" value="4. Frontend converts image file to base64&#xa;FileReader.readAsDataURL()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2F6FED;" vertex="1" parent="front">
+          <mxGeometry x="60" y="470" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s5" value="5. Frontend POSTs to backend&#xa;/api/recognize&#xa;Body: { image, mimeType }" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2F6FED;fontStyle=1;" vertex="1" parent="front">
+          <mxGeometry x="380" y="470" width="280" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="b1" value="6. Backend receives request&#xa;Next.js route: app/api/recognize/route.ts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D97706;fontStyle=1;" vertex="1" parent="back">
+          <mxGeometry x="60" y="470" width="300" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="b2" value="7. Backend validates server requirements&#xa;- API key exists&#xa;- image is present&#xa;- mimeType starts with image/" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D97706;" vertex="1" parent="back">
+          <mxGeometry x="60" y="600" width="300" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="b3" value="8. Backend builds LLM request&#xa;- OCR/contact extraction prompt&#xa;- data:image/...;base64 image URL&#xa;- response_format json_object" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D97706;" vertex="1" parent="back">
+          <mxGeometry x="60" y="745" width="300" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="llm" value="9. OpenRouter Vision LLM processes image&#xa;Default model: google/gemini-2.5-flash&#xa;Returns JSON content" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#F3E8FF;strokeColor=#7E22CE;fontStyle=1;" vertex="1" parent="back">
+          <mxGeometry x="420" y="735" width="240" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="b4" value="10. Backend parses and normalizes LLM output&#xa;- Extracts JSON even if fenced&#xa;- Fills missing contact fields&#xa;- Clamps confidence 0-100" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D97706;" vertex="1" parent="back">
+          <mxGeometry x="420" y="590" width="260" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="b5" value="11. Backend returns response&#xa;Success: { contact, rawText, confidence }&#xa;Error: status + message" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D97706;fontStyle=1;" vertex="1" parent="back">
+          <mxGeometry x="420" y="470" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="s6" value="12. Frontend receives JSON&#xa;- Shows raw OCR text&#xa;- Populates editable contact form&#xa;- Keeps first direct phone number&#xa;- Displays confidence/toast" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2F6FED;" vertex="1" parent="front">
+          <mxGeometry x="380" y="610" width="280" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="s7" value="13. User reviews and edits fields&#xa;Frontend validates email and phone" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2F6FED;" vertex="1" parent="front">
+          <mxGeometry x="380" y="780" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s8" value="14. User saves contact locally&#xa;Frontend writes to localStorage&#xa;No backend save in current app" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8FFF1;strokeColor=#16A34A;fontStyle=1;" vertex="1" parent="front">
+          <mxGeometry x="60" y="780" width="280" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="err" value="Error handling path&#xa;Frontend resets fields and shows toast&#xa;Backend returns 400 / 422 / 500 as needed" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF2F2;strokeColor=#DC2626;fontColor=#7F1D1D;" vertex="1" parent="1">
+          <mxGeometry x="600" y="995" width="400" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" value="Blue lane = frontend process&#xa;Orange lane = backend process&#xa;Purple cloud = external LLM service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#64748B;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="990" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;endArrow=block;endFill=1;" edge="1" parent="front" source="s1" target="s2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;endArrow=block;endFill=1;" edge="1" parent="front" source="s2" target="s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;endArrow=block;endFill=1;" edge="1" parent="front" source="s3" target="s4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;endArrow=block;endFill=1;" edge="1" parent="front" source="s4" target="s5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="request" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;endArrow=block;endFill=1;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="s5" target="b1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="760" y="515" as="sourcePoint" />
+            <mxPoint x="900" y="515" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="800" y="515" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;endArrow=block;endFill=1;" edge="1" parent="back" source="b1" target="b2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;endArrow=block;endFill=1;" edge="1" parent="back" source="b2" target="b3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7E22CE;endArrow=block;endFill=1;" edge="1" parent="back" source="b3" target="llm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7E22CE;endArrow=block;endFill=1;" edge="1" parent="back" source="llm" target="b4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;endArrow=block;endFill=1;" edge="1" parent="back" source="b4" target="b5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" value="result JSON" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;endArrow=block;endFill=1;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="b5" target="s6">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1260" y="560" as="sourcePoint" />
+            <mxPoint x="700" y="675" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="1180" y="675" />
+              <mxPoint x="760" y="675" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;endArrow=block;endFill=1;" edge="1" parent="front" source="s6" target="s7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#16A34A;endArrow=block;endFill=1;" edge="1" parent="front" source="s7" target="s8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" value="invalid / failed" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#DC2626;endArrow=block;endFill=1;dashed=1;fontColor=#7F1D1D;" edge="1" parent="1" source="s2" target="err">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#DC2626;endArrow=block;endFill=1;dashed=1;fontColor=#7F1D1D;" edge="1" parent="1" source="b5" target="err">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1390" y="560" as="sourcePoint" />
+            <mxPoint x="1000" y="1030" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="1510" y="560" />
+              <mxPoint x="1510" y="1030" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
