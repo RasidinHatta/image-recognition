@@ -135,7 +135,7 @@ export function BusinessCardScanner() {
   const [saveDialogOpen, setSaveDialogOpen] = React.useState(false);
   const [scannerOpen, setScannerOpen] = React.useState(false);
   const [isPhoneCamera, setIsPhoneCamera] = React.useState(false);
-  const [scannerStatus, setScannerStatus] = React.useState("Click Start Camera to allow camera access.");
+  const [scannerStatus, setScannerStatus] = React.useState("Requesting camera permission...");
   const [scannerReady, setScannerReady] = React.useState(false);
   const [scannerError, setScannerError] = React.useState(false);
   const [isAutoCapturing, setIsAutoCapturing] = React.useState(false);
@@ -358,16 +358,12 @@ export function BusinessCardScanner() {
     scanFrameRef.current = window.requestAnimationFrame(scanFrameLoop);
   }, [captureFromScanner]);
 
-  const startPcCamera = React.useCallback(async () => {
+  const startCamera = React.useCallback(async () => {
     stopCamera();
     setScannerReady(false);
     setScannerError(false);
     setIsAutoCapturing(false);
-    setScannerStatus(
-      isPhoneCamera
-        ? "Requesting camera permission..."
-        : "Requesting PC camera permission...",
-    );
+    setScannerStatus("Requesting camera permission...");
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setScannerError(true);
@@ -429,9 +425,7 @@ export function BusinessCardScanner() {
       setScannerStatus(
         error instanceof Error && error.message.includes("timed out")
           ? "Camera permission is still pending. Click the browser camera icon, allow access, then retry."
-          : isPhoneCamera
-            ? "Camera permission was blocked or no camera was found."
-            : "Camera permission was blocked or no PC camera was found.",
+          : "Camera permission was blocked or no camera was found.",
       );
     }
   }, [isPhoneCamera, scanFrame, stopCamera]);
@@ -637,12 +631,8 @@ export function BusinessCardScanner() {
                     type="button"
                     variant="secondary"
                     onClick={() => {
-                      setScannerStatus(
-                        isPhoneCamera
-                          ? "Click Start Camera to allow camera access."
-                          : "Click Start PC Camera to allow camera access.",
-                      );
                       setScannerOpen(true);
+                      window.setTimeout(() => void startCamera(), 0);
                     }}
                     disabled={isProcessing}
                   >
@@ -921,27 +911,13 @@ export function BusinessCardScanner() {
               type="button"
               size="sm"
               variant="outline"
-              onClick={() => void startPcCamera()}
+              onClick={() => void startCamera()}
             >
               Retry
             </Button>
           </div>
         ) : null}
         <DialogFooter>
-          <Button
-            type="button"
-            onClick={() => void startPcCamera()}
-            disabled={isAutoCapturing}
-          >
-            <Camera className="h-4 w-4" />
-            {scannerReady
-              ? isPhoneCamera
-                ? "Restart Camera"
-                : "Restart PC Camera"
-              : isPhoneCamera
-                ? "Start Camera"
-                : "Start PC Camera"}
-          </Button>
           <Button
             type="button"
             variant="outline"
