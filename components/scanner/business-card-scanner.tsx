@@ -134,7 +134,8 @@ export function BusinessCardScanner() {
   const [contact, setContact] = React.useState<ContactDetails>(emptyContact);
   const [saveDialogOpen, setSaveDialogOpen] = React.useState(false);
   const [scannerOpen, setScannerOpen] = React.useState(false);
-  const [scannerStatus, setScannerStatus] = React.useState("Click Start PC Camera to allow camera access.");
+  const [isPhoneCamera, setIsPhoneCamera] = React.useState(false);
+  const [scannerStatus, setScannerStatus] = React.useState("Click Start Camera to allow camera access.");
   const [scannerReady, setScannerReady] = React.useState(false);
   const [scannerError, setScannerError] = React.useState(false);
   const [isAutoCapturing, setIsAutoCapturing] = React.useState(false);
@@ -150,6 +151,22 @@ export function BusinessCardScanner() {
 
     return () => window.clearInterval(interval);
   }, [isProcessing]);
+
+  React.useEffect(() => {
+    const mediaQuery = window.matchMedia("(pointer: coarse)");
+
+    const updateCameraLabel = () => {
+      setIsPhoneCamera(
+        mediaQuery.matches ||
+          /Android|iPhone|iPad|iPod|Mobile/i.test(window.navigator.userAgent),
+      );
+    };
+
+    updateCameraLabel();
+    mediaQuery.addEventListener("change", updateCameraLabel);
+
+    return () => mediaQuery.removeEventListener("change", updateCameraLabel);
+  }, []);
 
   const stopCamera = React.useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -346,7 +363,11 @@ export function BusinessCardScanner() {
     setScannerReady(false);
     setScannerError(false);
     setIsAutoCapturing(false);
-    setScannerStatus("Requesting PC camera permission...");
+    setScannerStatus(
+      isPhoneCamera
+        ? "Requesting camera permission..."
+        : "Requesting PC camera permission...",
+    );
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setScannerError(true);
@@ -365,10 +386,16 @@ export function BusinessCardScanner() {
 
     try {
       const streamRequest = navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
+        video: isPhoneCamera
+          ? {
+              facingMode: { ideal: "environment" },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            }
+          : {
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
         audio: false,
       });
       const timeout = new Promise<never>((_, reject) => {
@@ -402,10 +429,12 @@ export function BusinessCardScanner() {
       setScannerStatus(
         error instanceof Error && error.message.includes("timed out")
           ? "Camera permission is still pending. Click the browser camera icon, allow access, then retry."
-          : "Camera permission was blocked or no PC camera was found.",
+          : isPhoneCamera
+            ? "Camera permission was blocked or no camera was found."
+            : "Camera permission was blocked or no PC camera was found.",
       );
     }
-  }, [scanFrame, stopCamera]);
+  }, [isPhoneCamera, scanFrame, stopCamera]);
 
   React.useEffect(() => {
     if (!scannerOpen) {
@@ -608,7 +637,11 @@ export function BusinessCardScanner() {
                     type="button"
                     variant="secondary"
                     onClick={() => {
-                      setScannerStatus("Click Start PC Camera to allow camera access.");
+                      setScannerStatus(
+                        isPhoneCamera
+                          ? "Click Start Camera to allow camera access."
+                          : "Click Start PC Camera to allow camera access.",
+                      );
                       setScannerOpen(true);
                     }}
                     disabled={isProcessing}
@@ -901,7 +934,13 @@ export function BusinessCardScanner() {
             disabled={isAutoCapturing}
           >
             <Camera className="h-4 w-4" />
-            {scannerReady ? "Restart PC Camera" : "Start PC Camera"}
+            {scannerReady
+              ? isPhoneCamera
+                ? "Restart Camera"
+                : "Restart PC Camera"
+              : isPhoneCamera
+                ? "Start Camera"
+                : "Start PC Camera"}
           </Button>
           <Button
             type="button"
