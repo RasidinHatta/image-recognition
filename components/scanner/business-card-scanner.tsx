@@ -122,6 +122,8 @@ export function BusinessCardScanner() {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const streamRef = React.useRef<MediaStream | null>(null);
   const autoCaptureRef = React.useRef(false);
+  const scanFrameRef = React.useRef(0);
+  const stableSinceRef = React.useRef(0);
   const [isDragging, setIsDragging] = React.useState(false);
   const [isProcessing, setIsProcessing] = React.useState(false);
   const [progress, setProgress] = React.useState(0);
@@ -132,8 +134,10 @@ export function BusinessCardScanner() {
   const [contact, setContact] = React.useState<ContactDetails>(emptyContact);
   const [saveDialogOpen, setSaveDialogOpen] = React.useState(false);
   const [scannerOpen, setScannerOpen] = React.useState(false);
-  const [scannerStatus, setScannerStatus] = React.useState("Point the camera at the card.");
+  const [scannerStatus, setScannerStatus] = React.useState("Click Start PC Camera to allow camera access.");
   const [scannerReady, setScannerReady] = React.useState(false);
+  const [scannerError, setScannerError] = React.useState(false);
+  const [isAutoCapturing, setIsAutoCapturing] = React.useState(false);
 
   React.useEffect(() => {
     if (!isProcessing) {
@@ -151,8 +155,91 @@ export function BusinessCardScanner() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     autoCaptureRef.current = false;
+    window.cancelAnimationFrame(scanFrameRef.current);
+    scanFrameRef.current = 0;
+    stableSinceRef.current = 0;
     setScannerReady(false);
+    setScannerError(false);
+    setIsAutoCapturing(false);
   }, []);
+
+  const runRecognition = React.useCallback(
+    async (file: File) => {
+      if (!acceptedTypes.includes(file.type)) {
+        toast({
+          title: "Unsupported image type",
+          description: "Upload a JPG, PNG, or WEBP business card image.",
+          variant: "error",
+        });
+        return;
+      }
+
+      const objectUrl = URL.createObjectURL(file);
+      setPreviewUrl((current) => {
+        if (current) {
+          URL.revokeObjectURL(current);
+        }
+        return objectUrl;
+      });
+      setFileName(file.name);
+      setRawText("");
+      setContact(emptyContact);
+      setConfidence(0);
+      setProgress(12);
+      setIsProcessing(true);
+
+      try {
+        const image = await fileToBase64(file);
+        setProgress(34);
+
+        const response = await fetch("/api/recognize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image, mimeType: file.type }),
+        });
+
+        const payload = (await response.json()) as RecognitionResult & {
+          error?: string;
+        };
+
+        if (!response.ok) {
+          throw new Error(payload.error ?? "The card could not be processed.");
+        }
+
+        setProgress(100);
+        setRawText(payload.rawText);
+        setContact({
+          ...emptyContact,
+          ...payload.contact,
+          phoneNumber: getFirstPhoneNumber(payload.contact?.phoneNumber ?? ""),
+        });
+        setConfidence(payload.confidence);
+
+        toast({
+          title: "Business card recognized",
+          description: "Review the extracted fields before saving the contact.",
+        });
+      } catch (error) {
+        setRawText("");
+        setContact(emptyContact);
+        setConfidence(0);
+        toast({
+          title: "Recognition failed",
+          description:
+            error instanceof Error
+              ? error.message
+              : "No information could be detected.",
+          variant: "error",
+        });
+      } finally {
+        window.setTimeout(() => {
+          setIsProcessing(false);
+          setProgress(0);
+        }, 650);
+      }
+    },
+    [toast],
+  );
 
   const captureFromScanner = React.useCallback(async () => {
     const video = videoRef.current;
@@ -192,199 +279,146 @@ export function BusinessCardScanner() {
         type: "image/jpeg",
       }),
     );
-  }, [stopCamera, toast]);
+  }, [runRecognition, stopCamera, toast]);
+
+  const scanFrame = React.useCallback(function scanFrameLoop() {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    if (!video || !canvas || video.videoWidth === 0 || video.videoHeight === 0) {
+      scanFrameRef.current = window.requestAnimationFrame(scanFrameLoop);
+      return;
+    }
+
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+
+    if (!context) {
+      return;
+    }
+
+    const sampleWidth = 96;
+    const sampleHeight = 60;
+    canvas.width = sampleWidth;
+    canvas.height = sampleHeight;
+    context.drawImage(video, 0, 0, sampleWidth, sampleHeight);
+
+    const { data } = context.getImageData(0, 0, sampleWidth, sampleHeight);
+    let edgeScore = 0;
+    let contrastScore = 0;
+
+    for (let y = 1; y < sampleHeight; y += 2) {
+      for (let x = 1; x < sampleWidth; x += 2) {
+        const index = (y * sampleWidth + x) * 4;
+        const leftIndex = (y * sampleWidth + x - 1) * 4;
+        const topIndex = ((y - 1) * sampleWidth + x) * 4;
+        const light = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
+        const left = data[leftIndex] * 0.299 + data[leftIndex + 1] * 0.587 + data[leftIndex + 2] * 0.114;
+        const top = data[topIndex] * 0.299 + data[topIndex + 1] * 0.587 + data[topIndex + 2] * 0.114;
+        const delta = Math.abs(light - left) + Math.abs(light - top);
+        edgeScore += delta > 48 ? 1 : 0;
+        contrastScore += Math.abs(light - 128);
+      }
+    }
+
+    const hasCardLikeDetail = edgeScore > 80 && contrastScore > 9000;
+
+    if (hasCardLikeDetail) {
+      stableSinceRef.current = stableSinceRef.current || performance.now();
+      setScannerStatus("Card detected. Hold steady.");
+
+      if (performance.now() - stableSinceRef.current > 950 && !autoCaptureRef.current) {
+        autoCaptureRef.current = true;
+        setIsAutoCapturing(true);
+        setScannerStatus("Capturing card...");
+        void captureFromScanner();
+        return;
+      }
+    } else {
+      stableSinceRef.current = 0;
+      setScannerStatus("Place the card inside the frame.");
+    }
+
+    scanFrameRef.current = window.requestAnimationFrame(scanFrameLoop);
+  }, [captureFromScanner]);
+
+  const startPcCamera = React.useCallback(async () => {
+    stopCamera();
+    setScannerReady(false);
+    setScannerError(false);
+    setIsAutoCapturing(false);
+    setScannerStatus("Requesting PC camera permission...");
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setScannerError(true);
+      setScannerStatus("Camera access is not available in this browser.");
+      return;
+    }
+
+    if (
+      !window.isSecureContext &&
+      !["localhost", "127.0.0.1"].includes(window.location.hostname)
+    ) {
+      setScannerError(true);
+      setScannerStatus("Camera access requires HTTPS or localhost.");
+      return;
+    }
+
+    try {
+      const streamRequest = navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+      const timeout = new Promise<never>((_, reject) => {
+        window.setTimeout(
+          () => reject(new Error("Camera permission request timed out.")),
+          12000,
+        );
+      });
+      const stream = await Promise.race([streamRequest, timeout]);
+
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+
+      setScannerReady(true);
+      setScannerError(false);
+      setScannerStatus("Place the card inside the frame.");
+      scanFrameRef.current = window.requestAnimationFrame(scanFrame);
+    } catch (error) {
+      setScannerError(true);
+      setScannerReady(false);
+
+      if (error instanceof DOMException && error.name === "NotAllowedError") {
+        setScannerStatus("Camera permission was blocked. Allow camera access, then retry.");
+        return;
+      }
+
+      setScannerStatus(
+        error instanceof Error && error.message.includes("timed out")
+          ? "Camera permission is still pending. Click the browser camera icon, allow access, then retry."
+          : "Camera permission was blocked or no PC camera was found.",
+      );
+    }
+  }, [scanFrame, stopCamera]);
 
   React.useEffect(() => {
     if (!scannerOpen) {
-      stopCamera();
       return;
     }
 
-    let cancelled = false;
-    let animationFrame = 0;
-    let stableSince = 0;
-
-    const scoreFrame = () => {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-
-      if (!video || !canvas || video.videoWidth === 0 || video.videoHeight === 0) {
-        animationFrame = window.requestAnimationFrame(scoreFrame);
-        return;
-      }
-
-      const context = canvas.getContext("2d", { willReadFrequently: true });
-
-      if (!context) {
-        return;
-      }
-
-      const sampleWidth = 96;
-      const sampleHeight = 60;
-      canvas.width = sampleWidth;
-      canvas.height = sampleHeight;
-      context.drawImage(video, 0, 0, sampleWidth, sampleHeight);
-
-      const { data } = context.getImageData(0, 0, sampleWidth, sampleHeight);
-      let edgeScore = 0;
-      let contrastScore = 0;
-
-      for (let y = 1; y < sampleHeight; y += 2) {
-        for (let x = 1; x < sampleWidth; x += 2) {
-          const index = (y * sampleWidth + x) * 4;
-          const leftIndex = (y * sampleWidth + x - 1) * 4;
-          const topIndex = ((y - 1) * sampleWidth + x) * 4;
-          const light = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
-          const left = data[leftIndex] * 0.299 + data[leftIndex + 1] * 0.587 + data[leftIndex + 2] * 0.114;
-          const top = data[topIndex] * 0.299 + data[topIndex + 1] * 0.587 + data[topIndex + 2] * 0.114;
-          const delta = Math.abs(light - left) + Math.abs(light - top);
-          edgeScore += delta > 48 ? 1 : 0;
-          contrastScore += Math.abs(light - 128);
-        }
-      }
-
-      const hasCardLikeDetail = edgeScore > 80 && contrastScore > 9000;
-
-      if (hasCardLikeDetail) {
-        stableSince = stableSince || performance.now();
-        setScannerStatus("Card detected. Hold steady.");
-
-        if (performance.now() - stableSince > 950 && !autoCaptureRef.current) {
-          autoCaptureRef.current = true;
-          setScannerStatus("Capturing card...");
-          void captureFromScanner();
-          return;
-        }
-      } else {
-        stableSince = 0;
-        setScannerStatus("Place the card inside the frame.");
-      }
-
-      animationFrame = window.requestAnimationFrame(scoreFrame);
-    };
-
-    const startCamera = async () => {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setScannerStatus("Camera access is not available in this browser.");
-        return;
-      }
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: "environment" },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
-          audio: false,
-        });
-
-        if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-
-        streamRef.current = stream;
-
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
-
-        setScannerReady(true);
-        setScannerStatus("Place the card inside the frame.");
-        scoreFrame();
-      } catch {
-        setScannerStatus("Camera permission was blocked or no camera was found.");
-      }
-    };
-
-    void startCamera();
-
     return () => {
-      cancelled = true;
-      window.cancelAnimationFrame(animationFrame);
       stopCamera();
     };
-  }, [captureFromScanner, scannerOpen, stopCamera]);
+  }, [scannerOpen, stopCamera]);
 
   const updateContact = (field: keyof ContactDetails, value: string) => {
     setContact((current) => ({ ...current, [field]: value }));
-  };
-
-  const runRecognition = async (file: File) => {
-    if (!acceptedTypes.includes(file.type)) {
-      toast({
-        title: "Unsupported image type",
-        description: "Upload a JPG, PNG, or WEBP business card image.",
-        variant: "error",
-      });
-      return;
-    }
-
-    const objectUrl = URL.createObjectURL(file);
-    setPreviewUrl((current) => {
-      if (current) {
-        URL.revokeObjectURL(current);
-      }
-      return objectUrl;
-    });
-    setFileName(file.name);
-    setRawText("");
-    setContact(emptyContact);
-    setConfidence(0);
-    setProgress(12);
-    setIsProcessing(true);
-
-    try {
-      const image = await fileToBase64(file);
-      setProgress(34);
-
-      const response = await fetch("/api/recognize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image, mimeType: file.type }),
-      });
-
-      const payload = (await response.json()) as RecognitionResult & {
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "The card could not be processed.");
-      }
-
-      setProgress(100);
-      setRawText(payload.rawText);
-      setContact({
-        ...emptyContact,
-        ...payload.contact,
-        phoneNumber: getFirstPhoneNumber(payload.contact?.phoneNumber ?? ""),
-      });
-      setConfidence(payload.confidence);
-
-      toast({
-        title: "Business card recognized",
-        description: "Review the extracted fields before saving the contact.",
-      });
-    } catch (error) {
-      setRawText("");
-      setContact(emptyContact);
-      setConfidence(0);
-      toast({
-        title: "Recognition failed",
-        description:
-          error instanceof Error
-            ? error.message
-            : "No information could be detected.",
-        variant: "error",
-      });
-    } finally {
-      window.setTimeout(() => {
-        setIsProcessing(false);
-        setProgress(0);
-      }, 650);
-    }
   };
 
   const handleFiles = (files: FileList | null) => {
@@ -573,7 +607,10 @@ export function BusinessCardScanner() {
                   <Button
                     type="button"
                     variant="secondary"
-                    onClick={() => setScannerOpen(true)}
+                    onClick={() => {
+                      setScannerStatus("Click Start PC Camera to allow camera access.");
+                      setScannerOpen(true);
+                    }}
                     disabled={isProcessing}
                   >
                     <ScanLine className="h-4 w-4" />
@@ -822,7 +859,9 @@ export function BusinessCardScanner() {
             <div className="pointer-events-none absolute left-1/2 top-1/2 aspect-[1.58/1] w-[82%] -translate-x-1/2 -translate-y-1/2 rounded-lg border-2 border-white shadow-[0_0_0_999px_rgba(2,6,23,0.42)]" />
             <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-3 rounded-md bg-slate-950/75 px-3 py-2 text-sm text-white backdrop-blur">
               <span className="flex min-w-0 items-center gap-2">
-                {scannerReady ? (
+                {scannerError ? (
+                  <AlertCircle className="h-4 w-4 shrink-0 text-amber-300" />
+                ) : scannerReady ? (
                   <ScanLine className="h-4 w-4 shrink-0" />
                 ) : (
                   <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
@@ -833,7 +872,7 @@ export function BusinessCardScanner() {
                 type="button"
                 size="sm"
                 onClick={() => void captureFromScanner()}
-                disabled={!scannerReady || autoCaptureRef.current}
+                disabled={!scannerReady || isAutoCapturing}
               >
                 <Camera className="h-4 w-4" />
                 Capture
@@ -842,7 +881,38 @@ export function BusinessCardScanner() {
           </div>
         </div>
         <canvas ref={canvasRef} className="hidden" />
+        {scannerError ? (
+          <div className="mt-3 flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+            <span>Browser camera access needs permission. The photo option can still use your phone camera.</span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => void startPcCamera()}
+            >
+              Retry
+            </Button>
+          </div>
+        ) : null}
         <DialogFooter>
+          <Button
+            type="button"
+            onClick={() => void startPcCamera()}
+            disabled={isAutoCapturing}
+          >
+            <Camera className="h-4 w-4" />
+            {scannerReady ? "Restart PC Camera" : "Start PC Camera"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setScannerOpen(false);
+              cameraInputRef.current?.click();
+            }}
+          >
+            Take Photo Instead
+          </Button>
           <Button type="button" variant="outline" onClick={() => setScannerOpen(false)}>
             Cancel
           </Button>
