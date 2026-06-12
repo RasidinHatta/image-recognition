@@ -12,6 +12,7 @@ import {
   Loader2,
   RefreshCcw,
   ScanLine,
+  Workflow,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -365,6 +366,17 @@ export function DeliveryOrderScanner() {
             >
               <ArrowLeft className="h-4 w-4" />
               Home
+            </Link>
+            <Link
+              href="/delivery-order/flow"
+              className={buttonVariants({
+                variant: "outline",
+                size: "sm",
+                className: "bg-white/80",
+              })}
+            >
+              <Workflow className="h-4 w-4" />
+              Flow
             </Link>
             <Badge className="bg-emerald-50 text-emerald-700">
               <Check className="mr-1 h-3.5 w-3.5" />
