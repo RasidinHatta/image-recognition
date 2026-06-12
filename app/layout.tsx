@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Business Card Scanner",
-  description: "Extract and review business card contact details with AI vision.",
+  title: "SwiftOCR",
+  description: "Extract and review business cards and delivery orders with AI vision.",
 };
 
 export default function RootLayout({
